@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+
+logs/
+snapshots/
+exports/
+backups/
+.tmp/
+
+database.db
+historico_alteracoes.txt
+Tabela_NCM_Vigente_*.json
+tabela_ncm_atual*.csv
