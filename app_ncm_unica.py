@@ -59,14 +59,30 @@ def main() -> None:
             )
 
         with st.spinner("Consultando DOU dia a dia (ordem decrescente)..."):
-            result = buscar_alteracoes_ncm_online(
-                settings=settings,
-                ncm=ncm,
-                target_events=int(target_events),
-                max_days=int(max_days),
-                max_pages_per_day=int(max_pages_day),
-                progress_callback=_on_progress,
-            )
+            try:
+                result = buscar_alteracoes_ncm_online(
+                    settings=settings,
+                    ncm=ncm,
+                    target_events=int(target_events),
+                    max_days=int(max_days),
+                    max_pages_per_day=int(max_pages_day),
+                    progress_callback=_on_progress,
+                )
+            except TypeError as exc:
+                # Compatibilidade com runtime antigo sem suporte a progress_callback.
+                if "progress_callback" not in str(exc):
+                    raise
+                progress_bar.empty()
+                progress_text.warning(
+                    "Runtime sem suporte a barra em tempo real; executando consulta em modo compatibilidade."
+                )
+                result = buscar_alteracoes_ncm_online(
+                    settings=settings,
+                    ncm=ncm,
+                    target_events=int(target_events),
+                    max_days=int(max_days),
+                    max_pages_per_day=int(max_pages_day),
+                )
 
         st.success(
             f"Consulta concluida. Dias varridos: {result.dias_varridos} | "
