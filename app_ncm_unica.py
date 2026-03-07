@@ -1,5 +1,7 @@
-from pathlib import Path
+import os
 import re
+import subprocess
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -33,13 +35,53 @@ def _parse_ncms(raw: str) -> tuple[list[str], list[str]]:
     return valid, invalid
 
 
+def _read_app_version(base_dir: Path) -> str:
+    env_version = os.getenv("APP_VERSION", "").strip()
+    if env_version:
+        return env_version
+
+    version_file = base_dir / "VERSION"
+    if version_file.exists():
+        content = version_file.read_text(encoding="utf-8").strip()
+        if content:
+            return content
+
+    return "dev"
+
+
+def _read_app_revision(base_dir: Path) -> str:
+    for var in ("GITHUB_SHA", "GIT_COMMIT", "COMMIT_SHA"):
+        value = os.getenv(var, "").strip()
+        if value:
+            return value[:7]
+
+    try:
+        output = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(base_dir),
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).strip()
+        if output:
+            return output
+    except Exception:
+        pass
+
+    return "local"
+
+
 def main() -> None:
     base_dir = Path(__file__).resolve().parent
     settings = Settings.load(base_dir)
+    app_version = _read_app_version(base_dir)
+    app_revision = _read_app_revision(base_dir)
 
     st.set_page_config(page_title="Consulta Online NCM", layout="wide")
     st.title("Consulta Online de Alteracoes de NCM")
     st.caption("Busca direta no DOU (sem usar historico do banco) em ordem decrescente de dias.")
+    st.caption(f"Build: versao `{app_version}` | revisao `{app_revision}`")
+    st.sidebar.caption(f"Build: {app_version} ({app_revision})")
 
     ncm_input = st.text_input(
         "NCMs (8 digitos, separadas por virgula; ex.: 65061000, 40115000)",

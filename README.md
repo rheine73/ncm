@@ -23,10 +23,21 @@ python -m streamlit run app_ncm_unica.py
 ```
 
 No app de NCM unica:
-1. Digite a NCM (8 digitos).
+1. Digite uma ou mais NCMs (8 digitos), separadas por virgula.
 2. Clique em `Consultar sites agora`.
 3. O app consulta o DOU online (sem usar historico do banco), dia a dia em ordem decrescente, ate encontrar as ultimas alteracoes.
 4. Veja data, tipo de alteracao, titulo, detalhe e URL do ato.
+5. O app exibe o build atual (`versao + revisao`) para facilitar validacao de deploy.
+
+## Versao do app
+
+Arquivo de versao: `VERSION`
+
+Opcionalmente, voce pode sobrescrever em runtime com variavel de ambiente:
+
+```env
+APP_VERSION=1.0.1
+```
 
 ## O que monitora
 
