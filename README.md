@@ -29,6 +29,7 @@ No app de NCM unica:
 4. Veja data, tipo de alteracao, titulo, detalhe e URL do ato.
 5. O app exibe o build atual (`versao + revisao`) para facilitar validacao de deploy.
 6. A cada consulta, o app salva snapshot em `snapshots/live_ncm` e compara automaticamente com o ultimo snapshot da mesma NCM.
+7. Para cada ato encontrado, o app gera tambem `Impacto importacao` e `Acao importacao`.
 
 ## Versao do app
 

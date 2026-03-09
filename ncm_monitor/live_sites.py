@@ -123,6 +123,22 @@ def _extract_regulatory_notes(plain_text: str) -> list[str]:
     return notes
 
 
+def _detect_split(plain_text: str, related_codes: list[str]) -> bool:
+    split_markers = [
+        "desdobr",
+        "desmembr",
+        "deixa de existir",
+        "extint",
+        "substitu",
+        "passa a ser",
+    ]
+    return bool(related_codes) and any(marker in plain_text for marker in split_markers)
+
+
+def _has_any_pattern(plain_text: str, patterns: list[str]) -> bool:
+    return any(re.search(p, plain_text, flags=re.IGNORECASE) for p in patterns)
+
+
 def _build_objective_impact(
     target_ncm: str,
     tipo: str,
@@ -139,15 +155,7 @@ def _build_objective_impact(
     related = sorted(set(related))
     related_fmt = ", ".join(_format_ncm(c) for c in related)
 
-    split_markers = [
-        "desdobr",
-        "desmembr",
-        "deixa de existir",
-        "extint",
-        "substitu",
-        "passa a ser",
-    ]
-    split_detected = bool(related) and any(marker in plain for marker in split_markers)
+    split_detected = _detect_split(plain, related)
     effective_date = _extract_effective_date(plain)
 
     if split_detected:
@@ -179,6 +187,102 @@ def _build_objective_impact(
         resumo = f"{resumo} " + " ".join(notes)
 
     return resumo, acao, related
+
+
+def _build_import_impact(
+    target_ncm: str,
+    tipo: str,
+    full_text: str,
+    ncms_relacionadas: list[str],
+) -> tuple[str, str]:
+    plain = _normalize_text(full_text)
+    target = normalize_ncm(target_ncm)
+    target_fmt = _format_ncm(target)
+    related = sorted(set(ncms_relacionadas))
+    related_fmt = ", ".join(_format_ncm(c) for c in related)
+    split_detected = _detect_split(plain, related)
+    effective_date = _extract_effective_date(plain)
+
+    has_import_refs = _has_any_pattern(
+        plain,
+        [
+            r"\bimportac\w*",
+            r"\baduaneir\w*",
+            r"\bdespacho aduaneiro\b",
+            r"\bdeclarac\w* de importac\w*",
+            r"\bsiscomex\b",
+            r"\bduimp\b",
+            r"\bdrawback\b",
+            r"\bex[-\s]?tarif\w*",
+        ],
+    )
+    has_licensing = _has_any_pattern(
+        plain,
+        [
+            r"\blicenci\w*",
+            r"\banuenc\w*",
+            r"\blpco\b",
+            r"\blicenca de importac\w*",
+            r"\bministerio da defesa\b",
+            r"\banvisa\b",
+            r"\binmetro\b",
+            r"\bmapa\b",
+            r"\bibama\b",
+        ],
+    )
+    has_tax_refs = _has_any_pattern(
+        plain,
+        [
+            r"\bii\b",
+            r"\bipi\b",
+            r"\bpis\b",
+            r"\bcofins\b",
+            r"\baliquot\w*",
+            r"\bimposto de importac\w*",
+        ],
+    )
+    no_auto_rate_change = any(token in plain for token in ["sem alter", "nao houve", "mantid", "sem mudanca"])
+
+    if split_detected:
+        impacto = f"A importacao com a NCM {target_fmt} deve migrar para: {related_fmt}."
+        if effective_date:
+            impacto += f" Vigencia a partir de {effective_date}."
+        acao = (
+            f"Atualizar cadastro de produto, DI/DUIMP e regras de importacao para usar as NCMs: {related_fmt}."
+        )
+        if has_licensing:
+            acao += " Validar licenciamento/anuencia no orgao competente antes do embarque."
+        return impacto, acao
+
+    if has_import_refs or has_licensing or has_tax_refs:
+        impacto_parts: list[str] = []
+        if has_licensing:
+            impacto_parts.append("Ha indicio de exigencia de licenciamento/anuencia na importacao.")
+        if has_import_refs:
+            impacto_parts.append("Pode haver impacto operacional no despacho aduaneiro (DI/DUIMP/Siscomex).")
+        if has_tax_refs:
+            if no_auto_rate_change:
+                impacto_parts.append("Nao ha indicio claro de mudanca automatica de aliquotas na importacao.")
+            else:
+                impacto_parts.append("Pode haver impacto tributario na importacao (II/IPI/PIS-COFINS-Importacao).")
+        impacto = " ".join(impacto_parts) or f"Houve referencia a importacao para a NCM {target_fmt}."
+
+        acao_parts: list[str] = []
+        if has_licensing:
+            acao_parts.append("Conferir LI/LPCO e orgao anuente antes do embarque.")
+        if has_import_refs:
+            acao_parts.append("Revisar parametros de DI/DUIMP e exigencias no Siscomex.")
+        if has_tax_refs and not no_auto_rate_change:
+            acao_parts.append("Validar tributacao na importacao (II/IPI/PIS-COFINS-Importacao).")
+        if tipo == "REVOGACAO":
+            acao_parts.append("Revalidar beneficios e fundamentos legais usados na importacao.")
+        acao = " ".join(acao_parts) or "Revisar o ato completo com o time de comercio exterior."
+        return impacto, acao
+
+    return (
+        f"Sem impacto explicito de importacao no texto para a NCM {target_fmt}.",
+        "Confirmar com o time de comercio exterior se ha efeito operacional ou tributario indireto.",
+    )
 
 
 def _find_change_type(text: str) -> tuple[str | None, str]:
@@ -268,6 +372,8 @@ class LiveEvent:
     detalhe: str
     resumo_objetivo: str
     acao_recomendada: str
+    impacto_importacao: str
+    acao_importacao: str
     ncms_relacionadas: list[str]
     url: str
 
@@ -425,6 +531,12 @@ def buscar_alteracoes_ncm_online(
                 tipo=tipo,
                 full_text=text,
             )
+            impacto_importacao, acao_importacao = _build_import_impact(
+                target_ncm=ncm_norm,
+                tipo=tipo,
+                full_text=text,
+                ncms_relacionadas=ncms_relacionadas,
+            )
 
             eventos.append(
                 LiveEvent(
@@ -435,6 +547,8 @@ def buscar_alteracoes_ncm_online(
                     detalhe=detalhe or "Termo de alteracao identificado no texto do ato.",
                     resumo_objetivo=resumo_objetivo,
                     acao_recomendada=acao_recomendada,
+                    impacto_importacao=impacto_importacao,
+                    acao_importacao=acao_importacao,
                     ncms_relacionadas=ncms_relacionadas,
                     url=url,
                 )

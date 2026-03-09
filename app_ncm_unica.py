@@ -224,6 +224,8 @@ def main() -> None:
                             "detalhe": e.detalhe,
                             "resumo_objetivo": e.resumo_objetivo,
                             "acao_recomendada": e.acao_recomendada,
+                            "impacto_importacao": e.impacto_importacao,
+                            "acao_importacao": e.acao_importacao,
                             "ncms_relacionadas": e.ncms_relacionadas,
                         }
                     )
@@ -236,6 +238,8 @@ def main() -> None:
                             "Titulo": e.titulo,
                             "Resumo objetivo": e.resumo_objetivo,
                             "Acao recomendada": e.acao_recomendada,
+                            "Impacto importacao": e.impacto_importacao,
+                            "Acao importacao": e.acao_importacao,
                             "NCMs relacionadas": ", ".join(e.ncms_relacionadas) if e.ncms_relacionadas else "",
                             "O que alterou": e.detalhe,
                             "URL": e.url,

@@ -48,6 +48,8 @@ def _normalize_event(event: dict[str, Any]) -> dict[str, Any]:
         "detalhe": str(event.get("detalhe") or event.get("O que alterou") or "").strip(),
         "resumo_objetivo": str(event.get("resumo_objetivo") or event.get("Resumo objetivo") or "").strip(),
         "acao_recomendada": str(event.get("acao_recomendada") or event.get("Acao recomendada") or "").strip(),
+        "impacto_importacao": str(event.get("impacto_importacao") or event.get("Impacto importacao") or "").strip(),
+        "acao_importacao": str(event.get("acao_importacao") or event.get("Acao importacao") or "").strip(),
         "ncms_relacionadas": _normalize_related_codes(
             event.get("ncms_relacionadas") or event.get("NCMs relacionadas") or []
         ),
