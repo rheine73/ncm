@@ -72,6 +72,16 @@ def _read_app_revision(base_dir: Path) -> str:
     return "local"
 
 
+def _event_attr(event: object, attr: str, default: str = "") -> str:
+    if isinstance(event, dict):
+        value = event.get(attr, default)
+    else:
+        value = getattr(event, attr, default)
+    if value is None:
+        return default
+    return str(value)
+
+
 def _snapshot_table(events: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(
         [
@@ -215,34 +225,61 @@ def main() -> None:
 
                 snapshot_events: list[dict] = []
                 for e in result.eventos:
+                    data_publicacao = _event_attr(e, "data_publicacao")
+                    tipo_alteracao = _event_attr(e, "tipo_alteracao")
+                    titulo = _event_attr(e, "titulo")
+                    url = _event_attr(e, "url")
+                    detalhe = _event_attr(e, "detalhe")
+                    resumo_objetivo = _event_attr(e, "resumo_objetivo")
+                    acao_recomendada = _event_attr(e, "acao_recomendada")
+                    impacto_importacao = _event_attr(
+                        e,
+                        "impacto_importacao",
+                        "Impacto de importacao indisponivel nesta revisao do backend.",
+                    )
+                    acao_importacao = _event_attr(
+                        e,
+                        "acao_importacao",
+                        "Revisar o ato completo para validar impacto em importacao.",
+                    )
+                    ncms_relacionadas_raw = getattr(e, "ncms_relacionadas", []) if not isinstance(e, dict) else e.get(
+                        "ncms_relacionadas", []
+                    )
+                    if isinstance(ncms_relacionadas_raw, str):
+                        ncms_relacionadas = [x.strip() for x in ncms_relacionadas_raw.split(",") if x.strip()]
+                    elif isinstance(ncms_relacionadas_raw, list):
+                        ncms_relacionadas = [str(x).strip() for x in ncms_relacionadas_raw if str(x).strip()]
+                    else:
+                        ncms_relacionadas = []
+
                     snapshot_events.append(
                         {
-                            "data_publicacao": e.data_publicacao,
-                            "tipo_alteracao": e.tipo_alteracao,
-                            "titulo": e.titulo,
-                            "url": e.url,
-                            "detalhe": e.detalhe,
-                            "resumo_objetivo": e.resumo_objetivo,
-                            "acao_recomendada": e.acao_recomendada,
-                            "impacto_importacao": e.impacto_importacao,
-                            "acao_importacao": e.acao_importacao,
-                            "ncms_relacionadas": e.ncms_relacionadas,
+                            "data_publicacao": data_publicacao,
+                            "tipo_alteracao": tipo_alteracao,
+                            "titulo": titulo,
+                            "url": url,
+                            "detalhe": detalhe,
+                            "resumo_objetivo": resumo_objetivo,
+                            "acao_recomendada": acao_recomendada,
+                            "impacto_importacao": impacto_importacao,
+                            "acao_importacao": acao_importacao,
+                            "ncms_relacionadas": ncms_relacionadas,
                         }
                     )
                     all_events.append(
                         {
                             "NCM consultada": ncm,
-                            "Data": e.data_publicacao,
-                            "Fonte": e.fonte,
-                            "Tipo": e.tipo_alteracao,
-                            "Titulo": e.titulo,
-                            "Resumo objetivo": e.resumo_objetivo,
-                            "Acao recomendada": e.acao_recomendada,
-                            "Impacto importacao": e.impacto_importacao,
-                            "Acao importacao": e.acao_importacao,
-                            "NCMs relacionadas": ", ".join(e.ncms_relacionadas) if e.ncms_relacionadas else "",
-                            "O que alterou": e.detalhe,
-                            "URL": e.url,
+                            "Data": data_publicacao,
+                            "Fonte": _event_attr(e, "fonte", "DOU"),
+                            "Tipo": tipo_alteracao,
+                            "Titulo": titulo,
+                            "Resumo objetivo": resumo_objetivo,
+                            "Acao recomendada": acao_recomendada,
+                            "Impacto importacao": impacto_importacao,
+                            "Acao importacao": acao_importacao,
+                            "NCMs relacionadas": ", ".join(ncms_relacionadas) if ncms_relacionadas else "",
+                            "O que alterou": detalhe,
+                            "URL": url,
                         }
                     )
                 snapshot_diffs[ncm] = compare_and_save_live_snapshot(settings.snapshots_dir, ncm, snapshot_events)
