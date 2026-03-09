@@ -28,6 +28,7 @@ No app de NCM unica:
 3. O app consulta o DOU online (sem usar historico do banco), dia a dia em ordem decrescente, ate encontrar as ultimas alteracoes.
 4. Veja data, tipo de alteracao, titulo, detalhe e URL do ato.
 5. O app exibe o build atual (`versao + revisao`) para facilitar validacao de deploy.
+6. A cada consulta, o app salva snapshot em `snapshots/live_ncm` e compara automaticamente com o ultimo snapshot da mesma NCM.
 
 ## Versao do app
 

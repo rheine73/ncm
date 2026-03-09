@@ -301,6 +301,47 @@ def buscar_alteracoes_ncm_online(
     atos_analisados = 0
     dias_varridos = 0
     started = monotonic()
+    max_days_safe = max(int(max_days), 1)
+
+    def _emit_progress(current_date: str | None, day_progress: float = 1.0, done: bool = False) -> None:
+        if not progress_callback:
+            return
+
+        bounded_day_progress = min(max(float(day_progress), 0.0), 1.0)
+        completed_days = float(dias_varridos)
+        if not done:
+            completed_days = max(float(dias_varridos - 1), 0.0) + bounded_day_progress
+
+        elapsed = monotonic() - started
+        avg_day = (elapsed / completed_days) if completed_days > 0 else 0.0
+        eta_limit = avg_day * max(max_days_safe - completed_days, 0.0)
+
+        eta_target = None
+        if len(eventos) > 0 and completed_days > 0:
+            events_per_day = len(eventos) / completed_days
+            remaining_events = max(target_events - len(eventos), 0)
+            if events_per_day > 0:
+                eta_target = avg_day * (remaining_events / events_per_day)
+
+        eta_candidates = [eta_limit]
+        if eta_target is not None:
+            eta_candidates.append(eta_target)
+        eta_seconds = min(eta_candidates) if eta_candidates else 0.0
+
+        progress_callback(
+            {
+                "progress": 1.0 if done else min(completed_days / max_days_safe, 1.0),
+                "days_scanned": dias_varridos,
+                "max_days": max_days_safe,
+                "current_date": current_date,
+                "events_found": min(len(eventos), target_events),
+                "target_events": target_events,
+                "acts_analyzed": atos_analisados,
+                "elapsed_seconds": elapsed,
+                "eta_seconds": max(eta_seconds, 0.0),
+                "done": done,
+            }
+        )
 
     for offset in range(max_days):
         day = date.today() - timedelta(days=offset)
@@ -309,6 +350,8 @@ def buscar_alteracoes_ncm_online(
 
         if len(eventos) >= target_events:
             break
+
+        _emit_progress(day_str, day_progress=0.0, done=False)
 
         day_candidates: dict[str, dict] = {}
         for query in queries:
@@ -342,7 +385,17 @@ def buscar_alteracoes_ncm_online(
                     if url not in day_candidates:
                         day_candidates[url] = ato
 
+        total_candidates = len(day_candidates)
+        processed_candidates = 0
         for url, ato in day_candidates.items():
+            processed_candidates += 1
+            if processed_candidates == 1 or processed_candidates % 5 == 0 or processed_candidates == total_candidates:
+                _emit_progress(
+                    day_str,
+                    day_progress=processed_candidates / max(total_candidates, 1),
+                    done=False,
+                )
+
             if url in seen_urls:
                 continue
             seen_urls.add(url)
@@ -390,58 +443,14 @@ def buscar_alteracoes_ncm_online(
             if len(eventos) >= target_events:
                 break
 
+        _emit_progress(day_str, day_progress=1.0, done=False)
+
         if len(eventos) >= target_events:
             break
 
-        if progress_callback:
-            elapsed = monotonic() - started
-            avg_day = elapsed / dias_varridos if dias_varridos else 0.0
-            eta_limit = avg_day * max(max_days - dias_varridos, 0)
-
-            eta_target = None
-            if len(eventos) > 0:
-                events_per_day = len(eventos) / dias_varridos
-                remaining_events = max(target_events - len(eventos), 0)
-                if events_per_day > 0:
-                    eta_target = avg_day * (remaining_events / events_per_day)
-
-            eta_candidates = [eta_limit]
-            if eta_target is not None:
-                eta_candidates.append(eta_target)
-            eta_seconds = min(eta_candidates) if eta_candidates else 0.0
-
-            progress_callback(
-                {
-                    "progress": min(dias_varridos / max_days, 1.0),
-                    "days_scanned": dias_varridos,
-                    "max_days": max_days,
-                    "current_date": day_str,
-                    "events_found": len(eventos),
-                    "target_events": target_events,
-                    "acts_analyzed": atos_analisados,
-                    "elapsed_seconds": elapsed,
-                    "eta_seconds": max(eta_seconds, 0.0),
-                    "done": False,
-                }
-            )
-
     eventos.sort(key=lambda e: e.data_publicacao, reverse=True)
     elapsed = monotonic() - started
-    if progress_callback:
-        progress_callback(
-            {
-                "progress": 1.0,
-                "days_scanned": dias_varridos,
-                "max_days": max_days,
-                "current_date": None,
-                "events_found": len(eventos[:target_events]),
-                "target_events": target_events,
-                "acts_analyzed": atos_analisados,
-                "elapsed_seconds": elapsed,
-                "eta_seconds": 0.0,
-                "done": True,
-            }
-        )
+    _emit_progress(current_date=None, day_progress=1.0, done=True)
 
     return LiveScanResult(
         eventos=eventos[:target_events],

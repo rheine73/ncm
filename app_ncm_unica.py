@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from ncm_monitor.live_snapshots import LiveSnapshotDiff, compare_and_save_live_snapshot
 from ncm_monitor.live_sites import buscar_alteracoes_ncm_online
 from ncm_monitor.settings import Settings
 from ncm_monitor.utils import normalize_ncm
@@ -71,6 +72,53 @@ def _read_app_revision(base_dir: Path) -> str:
     return "local"
 
 
+def _snapshot_table(events: list[dict]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Data": e.get("data_publicacao", ""),
+                "Tipo": e.get("tipo_alteracao", ""),
+                "Titulo": e.get("titulo", ""),
+                "URL": e.get("url", ""),
+            }
+            for e in events
+        ]
+    )
+
+
+def _render_snapshot_diff(snapshot_diffs: dict[str, LiveSnapshotDiff]) -> None:
+    if not snapshot_diffs:
+        return
+
+    st.subheader("Comparativo com snapshot anterior")
+    for ncm, diff in snapshot_diffs.items():
+        if diff.first_snapshot:
+            st.info(
+                f"NCM {ncm}: primeiro snapshot criado ({diff.current_count} evento(s)). "
+                f"Proxima consulta tera comparativo."
+            )
+        elif not diff.new_events and not diff.removed_events:
+            st.success(
+                f"NCM {ncm}: sem mudancas desde o ultimo snapshot "
+                f"(eventos atuais: {diff.current_count})."
+            )
+        else:
+            st.warning(
+                f"NCM {ncm}: {len(diff.new_events)} novo(s), {len(diff.removed_events)} removido(s), "
+                f"{diff.unchanged_count} mantido(s) em relacao ao ultimo snapshot."
+            )
+
+        with st.expander(f"Snapshot NCM {ncm}", expanded=False):
+            st.caption(f"Latest: {diff.latest_path}")
+            st.caption(f"Arquivo desta execucao: {diff.archive_path}")
+            if diff.new_events:
+                st.markdown("**Novos eventos**")
+                st.dataframe(_snapshot_table(diff.new_events), use_container_width=True, hide_index=True)
+            if diff.removed_events:
+                st.markdown("**Eventos que nao apareceram na consulta atual**")
+                st.dataframe(_snapshot_table(diff.removed_events), use_container_width=True, hide_index=True)
+
+
 def main() -> None:
     base_dir = Path(__file__).resolve().parent
     settings = Settings.load(base_dir)
@@ -104,6 +152,7 @@ def main() -> None:
         progress_bar = st.progress(0.0)
         progress_text = st.empty()
         all_events = []
+        snapshot_diffs: dict[str, LiveSnapshotDiff] = {}
         total_days = 0
         total_acts = 0
         total_elapsed = 0.0
@@ -112,7 +161,10 @@ def main() -> None:
         with st.spinner("Consultando DOU dia a dia (ordem decrescente)..."):
             for idx, ncm in enumerate(ncms):
                 def _on_progress(p: dict, current_idx: int = idx, current_ncm: str = ncm) -> None:
-                    ncm_progress = float(p.get("progress", 0.0))
+                    raw_progress = min(max(float(p.get("progress", 0.0)), 0.0), 1.0)
+                    ncm_progress = raw_progress ** 0.5
+                    if p.get("done"):
+                        ncm_progress = 1.0
                     global_progress = (current_idx + ncm_progress) / total_ncms
                     progress_bar.progress(min(max(global_progress, 0.0), 1.0))
 
@@ -127,6 +179,7 @@ def main() -> None:
                         f"NCM {current_ncm} | dia {p['days_scanned']}/{p['max_days']} ({p['current_date']}) | "
                         f"eventos {p['events_found']}/{p['target_events']} | "
                         f"atos {p['acts_analyzed']} | "
+                        f"progresso estimado {ncm_progress * 100:.1f}% | "
                         f"tempo {_fmt_seconds(p['elapsed_seconds'])} | "
                         f"ETA {_fmt_seconds(p['eta_seconds'])}"
                     )
@@ -160,7 +213,20 @@ def main() -> None:
                 total_acts += result.atos_analisados
                 total_elapsed += result.elapsed_seconds
 
+                snapshot_events: list[dict] = []
                 for e in result.eventos:
+                    snapshot_events.append(
+                        {
+                            "data_publicacao": e.data_publicacao,
+                            "tipo_alteracao": e.tipo_alteracao,
+                            "titulo": e.titulo,
+                            "url": e.url,
+                            "detalhe": e.detalhe,
+                            "resumo_objetivo": e.resumo_objetivo,
+                            "acao_recomendada": e.acao_recomendada,
+                            "ncms_relacionadas": e.ncms_relacionadas,
+                        }
+                    )
                     all_events.append(
                         {
                             "NCM consultada": ncm,
@@ -175,6 +241,7 @@ def main() -> None:
                             "URL": e.url,
                         }
                     )
+                snapshot_diffs[ncm] = compare_and_save_live_snapshot(settings.snapshots_dir, ncm, snapshot_events)
 
             progress_bar.progress(1.0)
 
@@ -183,6 +250,8 @@ def main() -> None:
             f"Atos analisados: {total_acts} | Tempo total: {_fmt_seconds(total_elapsed)} | "
             f"Alteracoes encontradas: {len(all_events)}"
         )
+
+        _render_snapshot_diff(snapshot_diffs)
 
         if not all_events:
             st.warning(
